@@ -1,0 +1,13 @@
+diffusers
+torch
+torchvision
+transformers
+fastapi
+uvicorn
+aiofiles
+databases 
+aiosqlite 
+python-multipart 
+pillow 
+transformers 
+moviepy
