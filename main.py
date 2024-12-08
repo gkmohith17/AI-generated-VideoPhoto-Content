@@ -16,6 +16,8 @@ import openai
 import requests
 from dotenv import load_dotenv
 from fastapi.responses import HTMLResponse, FileResponse
+from diffusers import StableDiffusionPipeline
+import torch
 from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Request
 
 # Load environment variables
@@ -33,6 +35,9 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Database URL
 DATABASE_URL = "sqlite:///./content_generation.db"
 database = Database(DATABASE_URL)
+
+stable_diffusion_pipeline = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5")
+stable_diffusion_pipeline.to("cuda" if torch.cuda.is_available() else "cpu")
 
 # Models
 class User(BaseModel):
@@ -96,25 +101,18 @@ async def startup():
 async def shutdown():
     await database.disconnect()
 
-# Content Generation Functions
 async def generate_images(prompt: str, count: int = 5) -> List[str]:
-    """Generate images using OpenAI's DALL-E API"""
+    """Generate images using Stable Diffusion"""
     try:
         image_paths = []
         for i in range(count):
-            response = openai.Image.create(
-                prompt=prompt,
-                n=1,
-                size="1024x1024"
-            )
+            # Generate the image
+            image = stable_diffusion_pipeline(prompt).images[0]
             
-            # Download and save the image
-            image_url = response['data'][0]['url']
+            # Save the image locally
             image_path = f"generated_content/images/{datetime.datetime.now().timestamp()}_{i}.png"
-            
-            async with aiofiles.open(image_path, mode='wb') as f:
-                image_content = requests.get(image_url).content
-                await f.write(image_content)
+            Path(image_path).parent.mkdir(parents=True, exist_ok=True)
+            image.save(image_path)
             
             image_paths.append(image_path)
         
@@ -122,7 +120,6 @@ async def generate_images(prompt: str, count: int = 5) -> List[str]:
     except Exception as e:
         logger.error(f"Error generating images: {str(e)}")
         raise HTTPException(status_code=500, detail="Image generation failed")
-
 async def generate_videos(prompt: str, count: int = 5) -> List[str]:
     """Generate videos using RunwayML API (placeholder implementation)"""
     # Note: This is a placeholder. You would need to implement actual video generation
@@ -168,10 +165,13 @@ async def generate_content(request: GenerationRequest):
 async def process_generation(request: GenerationRequest):
     """Process the content generation asynchronously"""
     try:
-        # Generate content
-        image_paths = await generate_images(request.prompt)
-        video_paths = await generate_videos(request.prompt)
-        
+        # Generate images and videos concurrently
+        image_task = generate_images(request.prompt, count=5)
+        video_task = generate_videos(request.prompt, count=5)
+
+        # Wait for both tasks to complete
+        image_paths, video_paths = await asyncio.gather(image_task, video_task)
+
         # Update database with results
         query = """
             UPDATE content_generations
@@ -186,14 +186,14 @@ async def process_generation(request: GenerationRequest):
             "video_paths": ",".join(video_paths),
             "image_paths": ",".join(image_paths),
             "user_id": request.user_id,
-            "prompt": request.prompt
+            "prompt": request.prompt,
         }
-        
+
         await database.execute(query=query, values=values)
-        
+
         # Send notification
         await send_notification(request.user_id, request.notification_time)
-    
+
     except Exception as e:
         logger.error(f"Error processing generation: {str(e)}")
         # Update database with error status
@@ -203,7 +203,7 @@ async def process_generation(request: GenerationRequest):
             SET status = 'Error'
             WHERE user_id = :user_id AND prompt = :prompt
             """,
-            values={"user_id": request.user_id, "prompt": request.prompt}
+            values={"user_id": request.user_id, "prompt": request.prompt},
         )
 
 async def send_notification(user_id: str, notification_time: Optional[str]):
