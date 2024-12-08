@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Content Generation Platform</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.2/axios.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 8px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        #content-display {
+            margin-top: 20px;
+        }
+        .content-item {
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Content Generation Platform</h1>
+    
+    <div class="form-group">
+        <label for="user-id">User ID:</label>
+        <input type="text" id="user-id" required>
+    </div>
+    
+    <div class="form-group">
+        <label for="email">Email:</label>
+        <input type="email" id="email" required>
+    </div>
+    
+    <div class="form-group">
+        <label for="notification-time">Notification Time (optional):</label>
+        <input type="time" id="notification-time">
+    </div>
+    
+    <button onclick="createUser()">Create User</button>
+    
+    <div class="form-group">
+        <label for="prompt">Generation Prompt:</label>
+        <textarea id="prompt" rows="4" required></textarea>
+    </div>
+    
+    <button onclick="generateContent()">Generate Content</button>
+    
+    <div id="status"></div>
+    <div id="content-display"></div>
+
+    <script>
+        async function createUser() {
+            const userId = document.getElementById('user-id').value;
+            const email = document.getElementById('email').value;
+            const notificationTime = document.getElementById('notification-time').value;
+            
+            try {
+                const response = await axios.post('/users/', {
+                    user_id: userId,
+                    email: email,
+                    notification_time: notificationTime
+                });
+                showStatus('User created successfully', 'success');
+            } catch (error) {
+                showStatus('Error creating user: ' + error.message, 'error');
+            }
+        }
+
+        async function generateContent() {
+            const userId = document.getElementById('user-id').value;
+            const prompt = document.getElementById('prompt').value;
+            const notificationTime = document.getElementById('notification-time').value;
+            
+            try {
+                const response = await axios.post('/generate/', {
+                    user_id: userId,
+                    prompt: prompt,
+                    notification_time: notificationTime
+                });
+                showStatus('Content generation started', 'success');
+                loadUserContent(userId);
+            } catch (error) {
+                showStatus('Error generating content: ' + error.message, 'error');
+            }
+        }
+
+        async function loadUserContent(userId) {
+            try {
+                const response = await axios.get(`/content/${userId}`);
+                const contentDisplay = document.getElementById('content-display');
+                contentDisplay.innerHTML = '';
+                
+                response.data.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'content-item';
+                    div.innerHTML = `
+                        <p><strong>Prompt:</strong> ${item.prompt}</p>
+                        <p><strong>Status:</strong> ${item.status}</p>
+                        <p><strong>Generated at:</strong> ${new Date(item.generated_at).toLocaleString()}</p>
+                    `;
+                    contentDisplay.appendChild(div);
+                });
+            } catch (error) {
+                showStatus('Error loading content: ' + error.message, 'error');
+            }
+        }
+
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.style.backgroundColor = type === 'success' ? '#d4edda' : '#f8d7da';
+            status.style.color = type === 'success' ? '#155724' : '#721c24';
+        }
+    </script>
+</body>
+</html>
